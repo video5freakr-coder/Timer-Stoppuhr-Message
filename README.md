@@ -1,36 +1,11 @@
-# Notion Lern-Timer – synchronisierte Version v7
+# Notion Lern-Timer – synchronisierte Version v8
 
-## Neu
+## Änderungen gegenüber v7
 
-- Die Verknüpfung mit der Windows-Begleit-App ist einmalig.
-- Der grosse Verbindungsbereich klappt nach erfolgreicher Verbindung automatisch zu.
-- Die unteren Start-/Reset-Knöpfe stehen direkt unter dem Timer.
-- Alle Klangoptionen sind platzsparend ein- und ausklappbar.
-
-### Stoppuhr-Klänge
-
-- Meditation – Drone & Klangschale
-- Alpha-Waves – 10 Hz
-- Klangschalen
-- Tiefe Ambient-Fläche
-- Regen
-- Lagerfeuer
-
-### Alarmklänge
-
-- Eieruhr
-- Glocke
-- Digitaler Doppelton
-- Klassischer Wecker
-- Stoppuhr-Piepton
-- Sanftes Chime
-
-### Alarmdauer
-
-- 30 Sekunden
-- 1 Minute
-- 3 Minuten
-- Bis manuell gestoppt
+- Dropdown-Menüs haben nun einen hellen Hintergrund und dunkle Schrift, auch im Dunkelmodus.
+- Die Optionen sind dadurch dauerhaft lesbar und nicht nur beim Darüberfahren.
+- `Lagerfeuer` wurde in `Wellen am Meer` umbenannt.
+- Alle bisherigen Funktionen und gespeicherten Einstellungen bleiben erhalten.
 
 ## GitHub aktualisieren
 
@@ -38,14 +13,16 @@ Alle Dateien aus dem ZIP direkt in die oberste Ebene des bestehenden Repositorys
 
 Danach in Notion wegen des Caches neu einbetten:
 
-`https://video5freakr-coder.github.io/notion-timer-widget/?v=7`
+`https://video5freakr-coder.github.io/notion-timer-widget/?v=8`
 
-## Begleit-App
+## Begleit-App automatisch mit Windows starten
 
-Im Notion-Widget einmal auf **Begleit-App öffnen und verbinden** klicken. Der Sync-Code wird automatisch über die URL übernommen. Danach:
+Nach der Installation als Edge-App:
 
-1. Windows-Benachrichtigung aktivieren.
-2. Bei Edge auf **Allow/Zulassen** klicken.
-3. Die App installieren.
+1. In Edge `edge://apps` öffnen.
+2. Bei der Lern-Timer-App **Details** wählen.
+3. **Auto-start on device login** aktivieren.
 
-Der Verbindungscode bleibt in der Begleit-App gespeichert.
+Die App öffnet sich dann nach der Windows-Anmeldung automatisch. Der Verbindungscode bleibt gespeichert; du musst sie nicht erneut verbinden.
+
+Die Begleit-App muss geöffnet bleiben, damit die Echtzeitverbindung zum Notion-Widget und die Benachrichtigung funktionieren. Sie darf minimiert sein.

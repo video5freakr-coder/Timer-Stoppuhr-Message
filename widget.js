@@ -37,7 +37,7 @@ const soundLabels = {
   bowl: "Klangschalen",
   deep: "Ambient",
   rain: "Regen",
-  campfire: "Lagerfeuer"
+  campfire: "Wellen am Meer"
 };
 
 const soundNotes = {
@@ -46,7 +46,7 @@ const soundNotes = {
   bowl: "Sanfter tiefer Hintergrund mit regelmässigen Klangschalen.",
   deep: "Langsame, tiefe Ambient-Fläche ohne helle Töne.",
   rain: "Gleichmässiger Regen mit einzelnen weicheren Tropfen.",
-  campfire: "Warmes Feuerrauschen mit unregelmässigem Knistern."
+  campfire: "Ruhiges Meeresrauschen mit langsamem, gleichmässigem Wellengang."
 };
 
 const alarmLabels = {
