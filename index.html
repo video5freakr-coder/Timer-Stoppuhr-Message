@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notion Lern-Timer</title>
+  <link rel="stylesheet" href="widget.css">
+</head>
+<body>
+  <main class="widget">
+    <div class="master-row">
+      <button class="soft master-toggle" type="button">▶ Beide starten</button>
+      <button class="soft master-reset" type="button">↺ Beide zurücksetzen</button>
+    </div>
+
+    <section class="card">
+      <div class="head">
+        <h2>Stoppuhr</h2>
+        <span class="status" id="swStatus">Bereit</span>
+      </div>
+
+      <div class="display">
+        <span id="swMain">00:00:00</span><span class="fraction" id="swFraction">.00</span>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="swToggle" type="button">Start</button>
+        <button class="soft" id="swReset" type="button">Zurücksetzen</button>
+      </div>
+
+      <details class="settings-panel" id="stopwatchSoundDetails">
+        <summary>
+          <span>Stoppuhr-Klang</span>
+          <span class="summary-value" id="ambientSummary">Meditation</span>
+        </summary>
+
+        <div class="settings-content">
+          <div class="setting-row">
+            <label class="toggle">
+              <input id="ambientEnabled" type="checkbox" checked>
+              Klang während der Laufzeit
+            </label>
+          </div>
+
+          <label class="select-field">
+            <span>Klang</span>
+            <select id="ambientType">
+              <option value="meditation">Meditation – Drone & Klangschale</option>
+              <option value="alpha">Alpha-Waves – 10 Hz</option>
+              <option value="bowl">Klangschalen</option>
+              <option value="deep">Tiefe Ambient-Fläche</option>
+              <option value="rain">Regen</option>
+              <option value="campfire">Lagerfeuer</option>
+            </select>
+          </label>
+
+          <label class="range-field">
+            <span>Lautstärke</span>
+            <input id="ambientVolume" type="range" min="0" max="0.38" step="0.005" value="0.11">
+          </label>
+
+          <p class="note" id="ambientNote">Ruhiger Drone mit weichem Rauschen und gelegentlicher Klangschale.</p>
+        </div>
+      </details>
+    </section>
+
+    <section class="card" id="timerCard">
+      <div class="head">
+        <h2>Timer</h2>
+        <span class="status" id="timerStatus">Bereit</span>
+      </div>
+
+      <div class="inputs">
+        <label class="field">Stunden<input id="hours" type="number" min="0" max="99" value="0"></label>
+        <label class="field">Minuten<input id="minutes" type="number" min="0" max="59" value="25"></label>
+        <label class="field">Sekunden<input id="seconds" type="number" min="0" max="59" value="0"></label>
+      </div>
+
+      <div class="display timer-display" id="timerDisplay">00:25:00</div>
+
+      <div class="adjust-row">
+        <button data-minutes="1">+1 min</button>
+        <button data-minutes="5">+5 min</button>
+        <button data-minutes="10">+10 min</button>
+        <button data-minutes="30">+30 min</button>
+      </div>
+
+      <div class="adjust-row negative">
+        <button data-minutes="-1">−1 min</button>
+        <button data-minutes="-5">−5 min</button>
+        <button data-minutes="-10">−10 min</button>
+        <button data-minutes="-30">−30 min</button>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="timerToggle" type="button">Start</button>
+        <button class="soft" id="timerReset" type="button">Zurücksetzen</button>
+        <button class="alarm-stop" id="alarmStop" type="button">Alarm stoppen</button>
+      </div>
+
+      <details class="settings-panel" id="alarmDetails">
+        <summary>
+          <span>Alarm-Einstellungen</span>
+          <span class="summary-value" id="alarmSummary">Eieruhr · 1 min</span>
+        </summary>
+
+        <div class="settings-content">
+          <div class="setting-row">
+            <label class="toggle">
+              <input id="alarmEnabled" type="checkbox" checked>
+              Alarmton
+            </label>
+          </div>
+
+          <label class="select-field">
+            <span>Alarmklang</span>
+            <select id="alarmType">
+              <option value="egg">Eieruhr</option>
+              <option value="bell">Glocke</option>
+              <option value="digital">Digitaler Doppelton</option>
+              <option value="classic">Klassischer Wecker</option>
+              <option value="stopwatch">Stoppuhr-Piepton</option>
+              <option value="chime">Sanftes Chime</option>
+            </select>
+          </label>
+
+          <label class="select-field">
+            <span>Alarmdauer</span>
+            <select id="alarmDuration">
+              <option value="30">30 Sekunden</option>
+              <option value="60" selected>1 Minute</option>
+              <option value="180">3 Minuten</option>
+              <option value="manual">Bis manuell gestoppt</option>
+            </select>
+          </label>
+
+          <label class="range-field">
+            <span>Lautstärke</span>
+            <input id="alarmVolume" type="range" min="0" max="0.40" step="0.01" value="0.16">
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <div class="master-row">
+      <button class="soft master-toggle" type="button">▶ Beide starten</button>
+      <button class="soft master-reset" type="button">↺ Beide zurücksetzen</button>
+    </div>
+
+    <details class="settings-panel sync-panel" id="syncDetails">
+      <summary>
+        <span id="syncSummaryText">Begleit-App einmalig verbinden</span>
+        <span class="status" id="syncStatus">Nicht eingerichtet</span>
+      </summary>
+
+      <div class="settings-content">
+        <p class="note">Einmal öffnen, Windows-Benachrichtigungen erlauben und die App installieren. Danach bleibt die Verbindung gespeichert.</p>
+
+        <div class="sync-actions">
+          <a class="button-link primary" id="openCompanion" href="companion.html" target="_blank" rel="noopener">Begleit-App öffnen und verbinden</a>
+          <button class="soft" id="newCode" type="button">Verbindung zurücksetzen</button>
+        </div>
+
+        <details class="advanced-sync">
+          <summary>Verbindungscode anzeigen</summary>
+          <div class="code-row">
+            <input id="syncCode" type="text" readonly aria-label="Sync-Code">
+            <button class="soft" id="copyCode" type="button">Code kopieren</button>
+          </div>
+        </details>
+      </div>
+    </details>
+  </main>
+
+  <script src="widget.js"></script>
+</body>
+</html>
