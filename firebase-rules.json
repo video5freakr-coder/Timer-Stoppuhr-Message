@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$room": {
+        ".read": "$room.length >= 24 && $room.length <= 64 && $room.matches(/^[A-Za-z0-9_-]+$/)",
+        ".write": "$room.length >= 24 && $room.length <= 64 && $room.matches(/^[A-Za-z0-9_-]+$/)"
+      }
+    }
+  }
+}

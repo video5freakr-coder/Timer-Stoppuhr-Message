@@ -1,58 +1,91 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de-CH">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <meta name="theme-color" content="#2f2f2f">
-  <title>Lern-Timer Begleit-App</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#191919">
+  <title>Lern-Timer</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png">
-  <link rel="stylesheet" href="companion.css">
+  <link rel="stylesheet" href="styles.css?v=10.0">
 </head>
-<body>
-  <main class="app">
-    <header>
-      <div><h1>Lern-Timer</h1><p>Windows-Begleit-App</p></div>
-      <button class="soft hidden" id="installButton">App installieren</button>
+<body class="desktop">
+  <main class="shell">
+    <header class="app-header">
+      <div>
+        <h1>Lern-Timer</h1>
+        <p>Windows-App · Benachrichtigungen und Mini-Fenster</p>
+      </div>
+      <div class="header-actions">
+        <button class="primary small" type="button" id="pipButton" hidden title="Kleines Fenster, das immer im Vordergrund bleibt">⧉ Mini-Fenster</button>
+        <button class="soft small" type="button" id="installButton" hidden>Installieren</button>
+      </div>
     </header>
 
-    <details class="panel" id="connectDetails">
-      <summary>
-        <span>Verbindung</span>
-        <span class="status" id="connectionStatus">Nicht verbunden</span>
-      </summary>
-      <div class="panel-content">
-        <label class="small-label" for="codeInput">Sync-Code aus Notion</label>
-        <div class="connect-row">
-          <input id="codeInput" type="text" autocomplete="off" placeholder="Code hier einfügen">
-          <button class="primary" id="connectButton">Verbinden</button>
+    <div class="status-bar">
+      <span class="chip wait" id="serverChip">Server …</span>
+      <span class="chip wait" id="notionChip">Notion …</span>
+      <span class="chip wait" id="notifyChip">Meldungen …</span>
+    </div>
+
+    <section id="setup" class="panel attention" hidden>
+      <div class="panel-content" style="padding-top:12px">
+        <h2>Mit Notion verbinden</h2>
+        <p class="hint">Öffne im Notion-Widget den Bereich „Windows-App“ und klicke auf <b>Windows-App öffnen und verbinden</b>. Oder füge hier den Verbindungscode aus Notion ein:</p>
+        <div class="copy-row">
+          <input type="text" id="setupRoom" placeholder="Verbindungscode aus Notion" autocomplete="off">
+          <button class="primary small" type="button" id="setupConnect">Verbinden</button>
         </div>
-        <button class="link-button" id="disconnectButton">Verbindung trennen</button>
+        <p class="hint" id="setupHint"></p>
+      </div>
+    </section>
+
+    <div class="clocks" id="clocks"></div>
+
+    <details class="panel" id="notifyPanel">
+      <summary><span>Benachrichtigungen und Töne</span><span class="chip wait" id="notifyChip2">…</span></summary>
+      <div class="panel-content">
+        <label class="toggle"><input type="checkbox" id="notifyEnabled"> Windows-Benachrichtigung, wenn ein Timer abläuft</label>
+        <label class="toggle"><input type="checkbox" id="alarmHere"> Alarmton in der Windows-App abspielen</label>
+        <label class="toggle"><input type="checkbox" id="ambientHere"> Stoppuhr-Klänge in der Windows-App abspielen</label>
+        <button class="soft small" type="button" id="testNotify">Test-Benachrichtigung senden</button>
+        <p class="hint" id="notifyHint"></p>
+        <p class="hint">
+          Damit keine Meldung verloren geht: unter <code>edge://apps</code> bei dieser App den automatischen Start bei der Windows-Anmeldung einschalten,
+          <code>video5freakr-coder.github.io</code> in den Edge-Einstellungen (System und Leistung) als Ausnahme für schlafende Tabs eintragen
+          und „Nicht stören“ in Windows beim Lernen ausschalten.
+          Die App darf minimiert sein, muss aber geöffnet bleiben.
+        </p>
       </div>
     </details>
 
-    <section class="card">
-      <div class="head"><h2>Stoppuhr</h2><span class="status" id="swStatus">—</span></div>
-      <div class="display"><span id="swMain">00:00:00</span><span class="fraction" id="swFraction">.00</span></div>
-    </section>
-
-    <section class="card">
-      <div class="head"><h2>Timer</h2><span class="status" id="timerStatus">—</span></div>
-      <div class="display" id="timerDisplay">00:00:00</div>
-      <p class="note" id="durationInfo">Warte auf Daten aus Notion.</p>
-    </section>
-
-    <details class="panel" open>
-      <summary>
-        <span>Windows-Benachrichtigung</span>
-        <span class="status" id="notifyStatus">Aus</span>
-      </summary>
+    <details class="panel" id="connectPanel">
+      <summary><span>Verbindung</span><span class="chip wait" id="serverChip2">…</span></summary>
       <div class="panel-content">
-        <label class="toggle"><input id="notifyEnabled" type="checkbox">Benachrichtigung aktivieren</label>
-        <p class="note">Die App darf minimiert sein, muss für die lokale Benachrichtigung aber geöffnet bleiben.</p>
+        <div class="status-list">
+          <div class="status-line"><span>Server (Firebase)</span><span class="chip wait" id="serverChip3">…</span></div>
+          <div class="status-line"><span>Notion-Widget</span><span class="chip wait" id="notionChip2">…</span></div>
+        </div>
+        <p class="hint" id="configHint" hidden>Firebase ist noch nicht eingerichtet: Trage die Datenbank-Adresse in <code>config.js</code> ein (siehe README).</p>
+        <p class="hint">Verbindungscode (gleicher Code wie im Notion-Widget):</p>
+        <div class="copy-row">
+          <input type="text" class="code" id="roomCode" readonly aria-label="Verbindungscode">
+          <button class="soft small" type="button" data-copy="roomCode">Kopieren</button>
+        </div>
+        <div class="copy-row">
+          <input type="text" id="newRoom" placeholder="Anderen Code einfügen" autocomplete="off">
+          <button class="soft small" type="button" id="useRoom">Verbinden</button>
+        </div>
+        <p class="hint">Embed-Link für Notion:</p>
+        <div class="copy-row">
+          <input type="text" id="embedLink" readonly aria-label="Embed-Link">
+          <button class="soft small" type="button" data-copy="embedLink">Kopieren</button>
+        </div>
+        <p class="hint" id="backupInfo"></p>
       </div>
     </details>
   </main>
-  <script src="companion.js"></script>
+
+  <script type="module" src="companion.js?v=10.0"></script>
 </body>
 </html>

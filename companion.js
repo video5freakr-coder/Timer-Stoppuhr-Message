@@ -1,263 +1,303 @@
-"use strict";
+// Windows-App (installierbare Edge-App): volle Bedienung, Windows-Benachrichtigungen,
+// Alarmton und Mini-Fenster, das über allen Fenstern bleibt.
 
-const $ = id => document.getElementById(id);
-const roundMin = ms => Math.round(ms / 60000);
-const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const SENDER = uid();
+import * as C from "./core.js?v=10.0";
+import { FIREBASE_DATABASE_URL } from "./config.js?v=10.0";
+import { createController, resolveRoom, setRoom } from "./app.js?v=10.0";
+import { startSync } from "./sync.js?v=10.0";
+import { SoundEngine } from "./sounds.js?v=10.0";
+import { mountClocks } from "./ui.js?v=10.0";
+import { createRuntime } from "./runtime.js?v=10.0";
+import { pipSupported, openPip } from "./pip.js?v=10.0";
+import { $, setChip, serverState, peerState, wireCopyButtons, embedUrl } from "./shared-ui.js?v=10.0";
 
-let eventSource = null;
-let remote = null;
-let lastMessage = 0;
-let lastNotified = localStorage.getItem("lastNotifiedToken") || "";
-let registration = null;
+const databaseURL = C.isValidDatabaseUrl(FIREBASE_DATABASE_URL) ? FIREBASE_DATABASE_URL.trim().replace(/\/$/, "") : "";
+const params = new URLSearchParams(location.search);
+const pendingAction = params.get("notify")
+  ? { type: "notification", action: params.get("notify"), clockId: params.get("clock"), expiryId: params.get("expiry") }
+  : null;
+const { room } = resolveRoom("desktop");
+if (location.search) history.replaceState({}, "", location.pathname);
+
+const swReady = registerServiceWorker();
 let installPrompt = null;
 
-function normalize(value) {
-  return String(value || "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 48);
+wireCopyButtons();
+setupInstallButton();
+
+if (room) {
+  start(room);
+} else {
+  showSetup();
 }
 
-function topic() {
-  const code = normalize($("codeInput").value);
-  return code ? `study_timer_${code}` : "";
+/* ---------- Ohne Code: einmalig verbinden ---------- */
+
+function showSetup() {
+  $("setup").hidden = false;
+  $("connectPanel").hidden = true;
+  $("notifyPanel").hidden = true;
+  setChip($("serverChip"), "Server: noch kein Code", "wait");
+  setChip($("notionChip"), "Notion: –", "wait");
+  setChip($("notifyChip"), "Meldungen: –", "wait");
+  $("setupConnect").addEventListener("click", () => {
+    const code = C.cleanCode($("setupRoom").value);
+    if (!C.isValidCode(code)) {
+      $("setupHint").textContent = "Der Code muss mindestens 24 Zeichen lang sein. Kopiere ihn im Notion-Widget unter „Verbindungscode“.";
+      return;
+    }
+    setRoom("desktop", code);
+    location.reload();
+  });
 }
 
-async function publish(kind, data = {}) {
-  if (!topic()) return;
-  try {
-    await fetch(`https://ntfy.sh/${topic()}`, {
-      method: "POST",
-      body: JSON.stringify({ app: "study-timer-sync-v2", kind, sender: SENDER, at: Date.now(), ...data }),
-      headers: {
-        "Content-Type": "text/plain;charset=UTF-8",
-        "Cache": "no",
-        "Firebase": "no"
+/* ---------- Mit Code ---------- */
+
+function start(currentRoom) {
+  const controller = createController({ role: "desktop", room: currentRoom, databaseURL, startSync });
+  const sounds = new SoundEngine();
+  sounds.unlock(); // Installierte Apps dürfen in Edge meist ohne Klick Töne abspielen.
+  document.addEventListener("pointerdown", () => sounds.unlock(), { passive: true });
+  document.addEventListener("keydown", () => sounds.unlock());
+  const view = mountClocks($("clocks"), controller, sounds);
+  const shownNotifications = new Map();
+
+  controller.start();
+
+  createRuntime(controller, sounds, {
+    ambientAllowed: () => controller.device.ambientHere,
+    alarmAllowed: () => controller.device.alarmHere !== "off",
+    onExpired(clock, now) {
+      if (controller.notified.has(clock.expiryId)) return;
+      controller.markNotified(clock.expiryId);
+      if (now - clock.endsAt <= C.LATE_LIMIT) showTimerNotification(clock);
+    },
+    onCheck({ now, wantsSound }) {
+      view.setWantsSound(wantsSound);
+      closeResolvedNotifications();
+      updateTitle(now);
+    }
+  });
+
+  /* Benachrichtigungen */
+
+  async function showTimerNotification(clock) {
+    if (!controller.device.notify || !("Notification" in window) || Notification.permission !== "granted") return;
+    const tag = `timer-${clock.expiryId}`;
+    const title = `${clock.label} ist abgelaufen`;
+    const options = {
+      body: `${C.formatDuration(clock.durationMs)} eingestellt · die Überzeit läuft weiter.`,
+      tag,
+      icon: "icon-192.png",
+      badge: "icon-192.png",
+      requireInteraction: true,
+      renotify: true,
+      timestamp: clock.endsAt,
+      data: { clockId: clock.id, expiryId: clock.expiryId },
+      actions: [
+        { action: "stop", title: "Alarm stoppen" },
+        { action: "snooze", title: "Noch 5 Min." }
+      ]
+    };
+    shownNotifications.set(tag, { clockId: clock.id, expiryId: clock.expiryId });
+    try {
+      const registration = await swReady;
+      if (registration) {
+        await registration.showNotification(title, options);
+        return;
+      }
+    } catch (_) {
+    }
+    try {
+      const { actions, ...plain } = options;
+      const notification = new Notification(title, plain);
+      notification.onclick = () => { window.focus(); notification.close(); };
+      shownNotifications.get(tag).notification = notification;
+    } catch (_) {
+    }
+  }
+
+  // Wurde der Alarm anderswo gestoppt oder der Timer zurückgesetzt, verschwindet die Meldung.
+  function closeResolvedNotifications() {
+    for (const [tag, info] of shownNotifications) {
+      const clock = controller.clocks[info.clockId];
+      const resolved = !clock || clock.deleted || clock.expiryId !== info.expiryId || clock.alarmStoppedId === info.expiryId;
+      if (!resolved) continue;
+      shownNotifications.delete(tag);
+      info.notification?.close();
+      swReady.then(registration => registration?.getNotifications({ tag }))
+        .then(list => list?.forEach(notification => notification.close()))
+        .catch(() => {});
+    }
+  }
+
+  function handleNotificationAction(data) {
+    if (data?.type !== "notification") return;
+    const clock = controller.clocks[data.clockId];
+    if (!clock || (data.expiryId && clock.expiryId !== data.expiryId)) return;
+    if (data.action === "stop") controller.stopAlarm(clock.id);
+    if (data.action === "snooze") {
+      const remaining = C.timerMs(clock, controller.now());
+      controller.adjust(clock.id, (5 * C.MINUTE - remaining) / C.MINUTE);
+    }
+  }
+
+  navigator.serviceWorker?.addEventListener("message", event => handleNotificationAction(event.data));
+  if (pendingAction) handleNotificationAction(pendingAction);
+
+  function updateTitle(now) {
+    const running = C.visibleClocks(controller.clocks, "timer")
+      .filter(clock => clock.running)
+      .sort((a, b) => a.endsAt - b.endsAt)[0];
+    const title = running ? `${C.formatCompact(C.timerMs(running, now), "timer")} · ${running.label} – Lern-Timer` : "Lern-Timer";
+    if (document.title !== title) document.title = title;
+  }
+
+  /* Einstellungen */
+
+  const notifyBox = $("notifyEnabled");
+  notifyBox.checked = controller.device.notify && "Notification" in window && Notification.permission === "granted";
+  $("alarmHere").checked = controller.device.alarmHere !== "off";
+  $("ambientHere").checked = controller.device.ambientHere;
+
+  notifyBox.addEventListener("change", async () => {
+    if (!notifyBox.checked) {
+      controller.device.notify = false;
+      controller.saveDevice();
+      return renderStatus();
+    }
+    let permission = "denied";
+    try {
+      permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    } catch (_) {
+    }
+    controller.device.notify = permission === "granted";
+    notifyBox.checked = controller.device.notify;
+    controller.saveDevice();
+    renderStatus();
+  });
+
+  $("alarmHere").addEventListener("change", event => {
+    controller.device.alarmHere = event.target.checked ? "on" : "off";
+    controller.saveDevice();
+  });
+  $("ambientHere").addEventListener("change", event => {
+    controller.device.ambientHere = event.target.checked;
+    controller.saveDevice();
+  });
+
+  $("testNotify").addEventListener("click", async () => {
+    if (Notification.permission !== "granted") {
+      notifyBox.checked = true;
+      notifyBox.dispatchEvent(new Event("change"));
+      return;
+    }
+    const registration = await swReady;
+    const options = { body: "So sieht die Meldung aus, wenn ein Timer abläuft.", tag: "test", icon: "icon-192.png", requireInteraction: true };
+    try {
+      if (registration) await registration.showNotification("Test: Lern-Timer", options);
+      else new Notification("Test: Lern-Timer", options);
+    } catch (error) {
+      $("notifyHint").textContent = `Benachrichtigung fehlgeschlagen: ${error.message}`;
+    }
+  });
+
+  /* Mini-Fenster */
+
+  if (pipSupported()) {
+    $("pipButton").hidden = false;
+    $("pipButton").addEventListener("click", async () => {
+      try {
+        await openPip(controller, sounds);
+      } catch (error) {
+        view.showToast(`Mini-Fenster nicht möglich: ${error.message}`);
       }
     });
-  } catch (_) {
-    setConnection("Sync offline", "error");
-  }
-}
-
-function setConnection(text, cssClass = "") {
-  $("connectionStatus").textContent = text;
-  $("connectionStatus").className = `status ${cssClass}`;
-}
-
-function connect() {
-  const code = normalize($("codeInput").value);
-  if (!code) {
-    setConnection("Code fehlt", "error");
-    $("connectDetails").open = true;
-    return;
   }
 
-  $("codeInput").value = code;
-  localStorage.setItem("studyTimerCompanionCode", code);
-  eventSource?.close();
-  setConnection("Verbinde …");
+  /* Verbindung */
 
-  eventSource = new EventSource(`https://ntfy.sh/${topic()}/sse`);
-  eventSource.onopen = () => {
-    setConnection("Verbunden", "connected");
-    $("connectDetails").open = false;
-    publish("companion_ready");
-    publish("request_state");
-  };
-
-  eventSource.onmessage = event => {
-    try {
-      const envelope = JSON.parse(event.data);
-      if (envelope.event !== "message") return;
-      const message = JSON.parse(envelope.message);
-      if (message.app !== "study-timer-sync-v2" || message.sender === SENDER) return;
-
-      lastMessage = Date.now();
-      setConnection("Verbunden", "connected");
-      if (message.kind === "state") {
-        remote = message.state;
-        render();
-      } else if (message.kind === "finished") {
-        notifyOnce(message.segmentToken, message.configuredMs, message.segmentMs);
-      }
-    } catch (_) {
+  $("roomCode").value = currentRoom;
+  $("embedLink").value = embedUrl(currentRoom);
+  $("configHint").hidden = Boolean(databaseURL);
+  $("useRoom").addEventListener("click", () => {
+    const code = C.cleanCode($("newRoom").value);
+    if (!C.isValidCode(code)) {
+      $("newRoom").value = "";
+      $("newRoom").placeholder = "Ungültiger Code (mind. 24 Zeichen)";
+      return;
     }
-  };
+    setRoom("desktop", code);
+    location.reload();
+  });
 
-  eventSource.onerror = () => setConnection("Verbindung wird neu aufgebaut", "error");
-}
+  const notifyPanel = $("notifyPanel");
+  const connectPanel = $("connectPanel");
+  notifyPanel.open = controller.ui.panels.notify === true;
+  connectPanel.open = controller.ui.panels.connect === true || !databaseURL;
+  notifyPanel.addEventListener("toggle", () => { controller.ui.panels.notify = notifyPanel.open; controller.saveUi(); });
+  connectPanel.addEventListener("toggle", () => { controller.ui.panels.connect = connectPanel.open; controller.saveUi(); });
 
-function disconnect() {
-  eventSource?.close();
-  eventSource = null;
-  remote = null;
-  localStorage.removeItem("studyTimerCompanionCode");
-  $("codeInput").value = "";
-  setConnection("Nicht verbunden");
-  $("connectDetails").open = true;
-  render();
-}
-
-function formatSw(ms) {
-  const centisecondsTotal = Math.floor(ms / 10);
-  const centiseconds = centisecondsTotal % 100;
-  const secondsTotal = Math.floor(centisecondsTotal / 100);
-  const seconds = secondsTotal % 60;
-  const minutesTotal = Math.floor(secondsTotal / 60);
-  const minutes = minutesTotal % 60;
-  const hours = Math.floor(minutesTotal / 60);
-  return {
-    main: [hours, minutes, seconds].map(value => String(value).padStart(2, "0")).join(":"),
-    fraction: String(centiseconds).padStart(2, "0")
-  };
-}
-
-function formatTimer(ms) {
-  const seconds = Math.max(0, Math.ceil(ms / 1000));
-  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
-    .map(value => String(value).padStart(2, "0"))
-    .join(":");
-}
-
-function render() {
-  if (!remote) {
-    $("swMain").textContent = "00:00:00";
-    $("swFraction").textContent = ".00";
-    $("timerDisplay").textContent = "00:00:00";
-    $("swStatus").textContent = "—";
-    $("timerStatus").textContent = "—";
-    $("durationInfo").textContent = "Warte auf Daten aus Notion.";
-    return;
+  function notifyState() {
+    if (!("Notification" in window)) return ["nicht unterstützt", "bad"];
+    if (Notification.permission === "denied") return ["blockiert", "bad"];
+    if (Notification.permission !== "granted") return ["noch nicht erlaubt", "bad"];
+    return controller.device.notify ? ["an", "ok"] : ["aus", "bad"];
   }
 
-  const now = Date.now();
-  const sw = remote.swRunning ? remote.swElapsed + now - remote.swStartedAt : remote.swElapsed;
-  const formatted = formatSw(Math.max(0, sw));
-  const remaining = remote.timerRunning ? Math.max(0, remote.timerEnd - now) : remote.remainingMs;
+  let notifyPanelOpened = false;
 
-  $("swMain").textContent = formatted.main;
-  $("swFraction").textContent = "." + formatted.fraction;
-  $("swStatus").textContent = remote.swRunning ? "Läuft" : (sw > 0 ? "Pausiert" : "Bereit");
-  $("timerDisplay").textContent = formatTimer(remaining);
-  $("timerStatus").textContent = remote.timerRunning ? "Läuft" : (remaining > 0 ? "Pausiert" : "Fertig");
-  $("durationInfo").textContent = `Eingestellt: ${roundMin(remote.configuredMs)} Minuten`;
-
-  if (remote.timerRunning && remaining <= 0 && remote.segmentToken) {
-    const segment = Math.max(0, remote.timerEnd - remote.segmentStartedAt);
-    notifyOnce(remote.segmentToken, remote.configuredMs, segment);
-    remote.timerRunning = false;
-  }
-}
-
-async function notifyOnce(token, configuredMs, segmentMs) {
-  if (!token || token === lastNotified) return;
-  lastNotified = token;
-  localStorage.setItem("lastNotifiedToken", token);
-
-  if (!$("notifyEnabled").checked || !("Notification" in window) || Notification.permission !== "granted") return;
-
-  const title = `${roundMin(configuredMs)}/${roundMin(segmentMs)} Minuten Timer abgelaufen`;
-  const options = {
-    body: "Dein Lern-Timer ist beendet.",
-    icon: "icon-192.png",
-    badge: "icon-192.png",
-    tag: `study-timer-${token}`,
-    renotify: true,
-    data: { url: "./companion.html" }
-  };
-
-  try {
-    const activeRegistration = registration || await navigator.serviceWorker.ready;
-    await activeRegistration.showNotification(title, options);
-  } catch (_) {
-    try { new Notification(title, options); } catch (_) {}
-  }
-}
-
-function updateNotify() {
-  if (!("Notification" in window)) {
-    $("notifyStatus").textContent = "Nicht unterstützt";
-    $("notifyEnabled").checked = false;
-    return;
-  }
-
-  if (Notification.permission === "denied") {
-    $("notifyStatus").textContent = "Blockiert";
-    $("notifyEnabled").checked = false;
-    return;
-  }
-
-  $("notifyStatus").textContent = $("notifyEnabled").checked && Notification.permission === "granted" ? "An" : "Aus";
-}
-
-async function changeNotify() {
-  if (!$("notifyEnabled").checked) {
-    localStorage.setItem("studyTimerNotify", "false");
-    updateNotify();
-    return;
-  }
-
-  try {
-    const permission = Notification.permission === "default"
-      ? await Notification.requestPermission()
-      : Notification.permission;
-    $("notifyEnabled").checked = permission === "granted";
-    localStorage.setItem("studyTimerNotify", String(permission === "granted"));
-  } catch (_) {
-    $("notifyEnabled").checked = false;
-  }
-  updateNotify();
-}
-
-async function init() {
-  if ("serviceWorker" in navigator) {
-    try {
-      registration = await navigator.serviceWorker.register("sw.js");
-      await navigator.serviceWorker.ready;
-    } catch (_) {
+  function renderStatus() {
+    const [serverText, serverKind] = serverState(controller);
+    const [notionText, notionKind] = peerState(controller, "notion");
+    const [notifyText, notifyKind] = notifyState();
+    setChip($("serverChip"), `Server ${serverText}`, serverKind);
+    setChip($("serverChip2"), serverText, serverKind);
+    setChip($("serverChip3"), serverText, serverKind);
+    setChip($("notionChip"), `Notion ${notionText.split(" · ")[0]}`, notionKind === "ok" ? "ok" : "wait");
+    setChip($("notionChip2"), notionText, notionKind === "ok" ? "ok" : "wait");
+    setChip($("notifyChip"), `Meldungen ${notifyText}`, notifyKind);
+    setChip($("notifyChip2"), notifyText, notifyKind);
+    if (notifyKind === "bad" && Notification.permission !== "granted") {
+      $("notifyHint").textContent = Notification.permission === "denied"
+        ? "Edge blockiert die Meldungen. Klicke links neben der Adresse auf das Schloss → Berechtigungen → Benachrichtigungen zulassen."
+        : "Setze den Haken bei „Windows-Benachrichtigung“ und bestätige die Abfrage von Edge.";
+      if (!notifyPanelOpened) notifyPanel.open = true;
+      notifyPanelOpened = true;
     }
+    const count = C.visibleClocks(controller.clocks).length;
+    $("backupInfo").textContent = `${count} Uhren sind auf diesem Gerät gesichert und werden bei jeder Änderung neu gespeichert.`;
   }
 
-  const params = new URLSearchParams(location.search);
-  const linkedCode = normalize(params.get("code"));
-  if (linkedCode) {
-    localStorage.setItem("studyTimerCompanionCode", linkedCode);
-    history.replaceState({}, "", "companion.html");
-  }
-
-  const code = linkedCode || localStorage.getItem("studyTimerCompanionCode") || "";
-  $("codeInput").value = code;
-  $("notifyEnabled").checked = localStorage.getItem("studyTimerNotify") === "true" && ("Notification" in window) && Notification.permission === "granted";
-  updateNotify();
-
-  if (code) {
-    $("connectDetails").open = false;
-    connect();
-  } else {
-    $("connectDetails").open = true;
-  }
-
-  setInterval(render, 200);
-  setInterval(() => {
-    if (eventSource) publish("companion_ping");
-  }, 60000);
+  controller.subscribe(renderStatus);
+  renderStatus();
+  setInterval(renderStatus, 15000);
 }
 
-window.addEventListener("beforeinstallprompt", event => {
-  event.preventDefault();
-  installPrompt = event;
-  $("installButton").classList.remove("hidden");
-});
+/* ---------- Service Worker & Installation ---------- */
 
-$("installButton").onclick = async () => {
-  if (!installPrompt) return;
-  installPrompt.prompt();
-  await installPrompt.userChoice;
-  installPrompt = null;
-  $("installButton").classList.add("hidden");
-};
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    await navigator.serviceWorker.register("sw.js");
+    return await navigator.serviceWorker.ready;
+  } catch (_) {
+    return null;
+  }
+}
 
-$("connectButton").onclick = connect;
-$("disconnectButton").onclick = disconnect;
-$("notifyEnabled").onchange = changeNotify;
-
-init();
+function setupInstallButton() {
+  window.addEventListener("beforeinstallprompt", event => {
+    event.preventDefault();
+    installPrompt = event;
+    $("installButton").hidden = false;
+  });
+  $("installButton").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+    $("installButton").hidden = true;
+  });
+  window.addEventListener("appinstalled", () => { $("installButton").hidden = true; });
+}

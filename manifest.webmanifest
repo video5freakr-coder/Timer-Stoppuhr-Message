@@ -1,26 +1,16 @@
 {
   "id": "./companion.html",
-  "name": "Lern-Timer Begleit-App",
+  "name": "Lern-Timer",
   "short_name": "Lern-Timer",
-  "description": "Windows-Benachrichtigungen für den Notion Lern-Timer.",
+  "description": "Stoppuhren und Timer für Notion – mit Windows-Benachrichtigungen und Mini-Fenster.",
   "lang": "de-CH",
   "start_url": "./companion.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#191919",
-  "theme_color": "#2f2f2f",
+  "theme_color": "#191919",
   "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
